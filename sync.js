@@ -1,35 +1,43 @@
 require("dotenv").config();
-const fs = require("fs");
 const fetch = require("node-fetch");
 
 const { AIRTABLE_BASE_ID, AIRTABLE_API_KEY, AIRTABLE_TABLE, AIRTABLE_VIEW } = process.env;
 
+async function fetchAllRecords() {
+  let allRecords = [];
+  let offset = null;
+
+  do {
+    const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE}`);
+    url.searchParams.set("pageSize", "100"); // Airtable max per request
+    url.searchParams.set("view", AIRTABLE_VIEW);
+    if (offset) url.searchParams.set("offset", offset);
+
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Airtable error: ${res.status} ${await res.text()}`);
+    }
+
+    const json = await res.json();
+    allRecords = allRecords.concat(json.records);
+    offset = json.offset;
+  } while (offset);
+
+  return allRecords;
+}
+
 async function syncVillas() {
   console.log("🚀 Starting villa sync...");
 
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE}?maxRecords=1000&view=${encodeURIComponent(
-    AIRTABLE_VIEW
-  )}`;
-  console.log("🔗 Fetching from:", url);
+  const records = await fetchAllRecords();
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Airtable error: ${res.status} ${await res.text()}`);
-  }
-
-  const json = await res.json();
-
-  if (!json.records) {
-    throw new Error("No records returned from Airtable");
-  }
-
-  const villas = json.records.map((r) => {
+  const villas = records.map((r) => {
     const f = r.fields;
     return {
-      villa_id: f.villa_id || r.id,
+      villa_id: f.villa_id || r.id, // ✅ use Airtable villa_id field if present
       name: f.name || "",
       region: f.region || "",
       sub_region: f.sub_region || "",
