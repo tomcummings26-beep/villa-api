@@ -1,48 +1,69 @@
-// sync.js
-import "dotenv/config";
-import fetch from "node-fetch";
+require("dotenv").config();
+const fs = require("fs");
+const fetch = require("node-fetch");
+const path = require("path");
 
-export async function syncVillas() {
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const table  = process.env.AIRTABLE_TABLE || "Villas";
-  const view   = process.env.AIRTABLE_VIEW;
+const { AIRTABLE_BASE_ID, AIRTABLE_API_KEY, AIRTABLE_TABLE, AIRTABLE_VIEW } = process.env;
 
-  let url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}?maxRecords=1000`;
-  if (view) url += `&view=${encodeURIComponent(view)}`;
+async function runSync() {
+  console.log("🚀 Starting villa sync...");
 
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` },
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE}?maxRecords=1000&view=${encodeURIComponent(
+    AIRTABLE_VIEW
+  )}`;
+
+  console.log("🔗 Fetching from:", url);
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${AIRTABLE_API_KEY}` },
   });
-  const data = await resp.json();
-  if (!data.records) throw new Error(JSON.stringify(data));
 
-  return data.records.map((r) => {
-    const f = r.fields || {};
+  if (!res.ok) {
+    console.error("❌ Sync failed:", await res.text());
+    process.exit(1);
+  }
+
+  const json = await res.json();
+
+  if (!json.records) {
+    console.error("❌ Sync failed: No records returned");
+    process.exit(1);
+  }
+
+  const villas = json.records.map((r) => {
+    const f = r.fields;
     return {
-      villa_id: r.id,
+      villa_id: f.dwelling_id || r.id,
       name: f.name || "",
       region: f.region || "",
       sub_region: f.sub_region || "",
       country: f.country || "",
-      capacity: Number(f.capacity || 0),
-      bedrooms: Number(f.bedrooms || 0),
-      bathrooms: Number(f.bathrooms || 0),
-      main_photo: f.image?.[0]?.url || "",
+      capacity: f.capacity || 0,
+      bedrooms: f.bedrooms || 0,
+      bathrooms: f.bathrooms || 0,
+      main_photo: f.main_photo || "",
       url: f.url || "",
       description: f.description || "",
-      availability_tags: Array.isArray(f.tags)
-        ? f.tags
-        : (f.tags || "").split(",").map((t) => t.trim()).filter(Boolean),
-      price_eur: Number(f.price_eur || 0),
-      price_gbp: Number(f.price_gbp || 0),
-      last_update: f.last_update || new Date().toISOString(),
+      availability_tags: Array.isArray(f.availability_tags)
+        ? f.availability_tags
+        : (f.availability_tags || "")
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean),
+      price_eur: f.price_eur || 0,
+      price_gbp: f.price_gbp || 0,
+      last_update: f.last_update || "",
     };
   });
+
+  const file = path.join(__dirname, "villas.json");
+  fs.writeFileSync(file, JSON.stringify(villas, null, 2));
+  console.log(`✅ Wrote ${villas.length} villas to villas.json`);
 }
 
-// still allow: npm run sync (optional local debug)
-if (process.argv[1]?.endsWith("sync.js")) {
-  syncVillas()
-    .then((v) => console.log(`✅ Fetched ${v.length} villas`))
-    .catch((e) => { console.error("❌ Sync failed:", e.message); process.exit(1); });
+if (require.main === module) {
+  runSync().catch((err) => {
+    console.error("❌ Sync error:", err);
+    process.exit(1);
+  });
 }
