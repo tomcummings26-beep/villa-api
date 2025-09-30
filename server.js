@@ -1,7 +1,7 @@
 // server.js
-import express from "express";
-import cors from "cors";
-import { syncVillas } from "./sync.js";
+const express = require("express");
+const cors = require("cors");
+const { syncVillas } = require("./sync");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -67,6 +67,6 @@ app.post("/admin/sync", async (req, res) => {
 app.listen(PORT, "0.0.0.0", async () => {
   console.log(`✅ Villa API running on port ${PORT}`);
   await refresh("startup");                          // warm up once
-  setInterval(() => refresh("interval"), 5*60*1000); // refresh every 5 min
+  setInterval(() => refresh("interval"), 5 * 60 * 1000); // refresh every 5 min
 });
 
