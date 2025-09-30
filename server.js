@@ -1,7 +1,8 @@
 // server.js
-const express = require("express");
-const cors = require("cors");
-const { syncVillas } = require("./sync");
+import express from "express";
+import cors from "cors";
+import cron from "node-cron";
+import { syncVillas } from "./sync.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,6 +16,7 @@ let lastSync = null;
 
 async function refresh(reason = "startup") {
   try {
+    console.log(`🚀 Starting villa sync... (${reason})`);
     const data = await syncVillas();
     VILLAS = data;
     lastSync = new Date().toISOString();
@@ -63,10 +65,14 @@ app.post("/admin/sync", async (req, res) => {
   res.json({ ok: true, lastSync, count: VILLAS.length });
 });
 
-// start + schedule
+// start server
 app.listen(PORT, "0.0.0.0", async () => {
   console.log(`✅ Villa API running on port ${PORT}`);
-  await refresh("startup");                          // warm up once
-  setInterval(() => refresh("interval"), 5 * 60 * 1000); // refresh every 5 min
+  await refresh("startup"); // warm up once
+
+  // schedule nightly refresh at 01:30 UTC
+  cron.schedule("30 1 * * *", () => {
+    refresh("cron");
+  });
 });
 
