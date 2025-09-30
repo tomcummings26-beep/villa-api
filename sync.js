@@ -1,17 +1,15 @@
 require("dotenv").config();
 const fs = require("fs");
 const fetch = require("node-fetch");
-const path = require("path");
 
 const { AIRTABLE_BASE_ID, AIRTABLE_API_KEY, AIRTABLE_TABLE, AIRTABLE_VIEW } = process.env;
 
-async function runSync() {
+async function syncVillas() {
   console.log("🚀 Starting villa sync...");
 
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE}?maxRecords=1000&view=${encodeURIComponent(
     AIRTABLE_VIEW
   )}`;
-
   console.log("🔗 Fetching from:", url);
 
   const res = await fetch(url, {
@@ -19,15 +17,13 @@ async function runSync() {
   });
 
   if (!res.ok) {
-    console.error("❌ Sync failed:", await res.text());
-    process.exit(1);
+    throw new Error(`Airtable error: ${res.status} ${await res.text()}`);
   }
 
   const json = await res.json();
 
   if (!json.records) {
-    console.error("❌ Sync failed: No records returned");
-    process.exit(1);
+    throw new Error("No records returned from Airtable");
   }
 
   const villas = json.records.map((r) => {
@@ -56,14 +52,8 @@ async function runSync() {
     };
   });
 
-  const file = path.join(__dirname, "villas.json");
-  fs.writeFileSync(file, JSON.stringify(villas, null, 2));
-  console.log(`✅ Wrote ${villas.length} villas to villas.json`);
+  console.log(`✅ Synced ${villas.length} villas`);
+  return villas;
 }
 
-if (require.main === module) {
-  runSync().catch((err) => {
-    console.error("❌ Sync error:", err);
-    process.exit(1);
-  });
-}
+module.exports = { syncVillas };
