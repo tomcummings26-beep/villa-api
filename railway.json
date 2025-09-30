@@ -1,0 +1,16 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "npm start"
+  },
+  "cron": [
+    {
+      "name": "Nightly Villa Sync",
+      "schedule": "0 2 * * *",
+      "command": "npm run sync"
+    }
+  ]
+}
