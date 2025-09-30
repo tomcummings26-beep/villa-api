@@ -1,5 +1,5 @@
+// server.js
 import express from "express";
-import fs from "fs";
 import cors from "cors";
 import { syncVillas } from "./sync.js";
 
@@ -9,65 +9,64 @@ const VILLA_SECRET = process.env.VILLA_SECRET;
 
 app.use(cors());
 
+// in-memory cache
+let VILLAS = [];
+let lastSync = null;
+
+async function refresh(reason = "startup") {
+  try {
+    const data = await syncVillas();
+    VILLAS = data;
+    lastSync = new Date().toISOString();
+    console.log(`✅ Refreshed ${VILLAS.length} villas (${reason})`);
+  } catch (e) {
+    console.error("❌ Refresh failed:", e.message);
+  }
+}
+
 // health
 app.get("/", (_req, res) => res.status(200).send("OK"));
-app.get("/healthz", (_req, res) => res.status(200).json({ status: "ok" }));
+app.get("/healthz", (_req, res) =>
+  res.status(200).json({ status: "ok", lastSync, count: VILLAS.length })
+);
 
-// data endpoints
+// data endpoints (serve from memory)
 app.get("/villas", (_req, res) => {
-  try {
-    const data = JSON.parse(fs.readFileSync("./villas.json", "utf-8"));
-    res.json(data);
-  } catch {
-    res.status(503).json({ error: "No villas found (warming up)" });
-  }
+  if (!VILLAS.length) return res.status(503).json({ error: "No villas (warming up)" });
+  res.json(VILLAS);
 });
 
 app.get("/villa/:id", (req, res) => {
-  try {
-    const data = JSON.parse(fs.readFileSync("./villas.json", "utf-8"));
-    const villa = data.find((v) => v.villa_id === req.params.id);
-    if (!villa) return res.status(404).json({ error: "Villa not found" });
-    res.json(villa);
-  } catch {
-    res.status(503).json({ error: "No villas found (warming up)" });
-  }
+  if (!VILLAS.length) return res.status(503).json({ error: "No villas (warming up)" });
+  const v = VILLAS.find((x) => x.villa_id === req.params.id);
+  if (!v) return res.status(404).json({ error: "Villa not found" });
+  res.json(v);
 });
 
 app.get("/villas/filter", (req, res) => {
-  try {
-    const { tag, maxPrice } = req.query;
-    const data = JSON.parse(fs.readFileSync("./villas.json", "utf-8"));
-    const filtered = data.filter((v) => {
-      const t = tag ? v.availability_tags?.includes(tag) : true;
-      const p = maxPrice ? Number(v.price_gbp) <= Number(maxPrice) : true;
-      return t && p;
-    });
-    res.json(filtered);
-  } catch {
-    res.status(503).json({ error: "No villas found (warming up)" });
-  }
+  if (!VILLAS.length) return res.status(503).json({ error: "No villas (warming up)" });
+  const { tag, maxPrice } = req.query;
+  const out = VILLAS.filter((v) => {
+    const t = tag ? v.availability_tags?.includes(tag) : true;
+    const p = maxPrice ? Number(v.price_gbp) <= Number(maxPrice) : true;
+    return t && p;
+  });
+  res.json(out);
 });
 
-// protected sync endpoint
+// admin on-demand sync
 app.post("/admin/sync", async (req, res) => {
-  try {
-    if (!VILLA_SECRET) return res.status(403).json({ error: "No sync secret set" });
-    const auth = req.headers["authorization"] || "";
-    if (auth !== `Bearer ${VILLA_SECRET}`) return res.status(401).json({ error: "Unauthorized" });
-
-    await syncVillas();
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+  const auth = req.headers["authorization"] || "";
+  if (!VILLA_SECRET) return res.status(403).json({ error: "No VILLA_SECRET set" });
+  if (auth !== `Bearer ${VILLA_SECRET}`) return res.status(401).json({ error: "Unauthorized" });
+  await refresh("manual");
+  res.json({ ok: true, lastSync, count: VILLAS.length });
 });
 
-process.on("SIGTERM", () => {
-  console.log("Received SIGTERM, shutting down gracefully…");
-  process.exit(0);
-});
-
-app.listen(PORT, "0.0.0.0", () => {
+// start + schedule
+app.listen(PORT, "0.0.0.0", async () => {
   console.log(`✅ Villa API running on port ${PORT}`);
+  await refresh("startup");                          // warm up once
+  setInterval(() => refresh("interval"), 5*60*1000); // refresh every 5 min
 });
+
