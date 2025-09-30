@@ -29,7 +29,7 @@ async function syncVillas() {
   const villas = json.records.map((r) => {
     const f = r.fields;
     return {
-      villa_id: f.dwelling_id || r.id,
+      villa_id: f.villa_id || r.id,
       name: f.name || "",
       region: f.region || "",
       sub_region: f.sub_region || "",
