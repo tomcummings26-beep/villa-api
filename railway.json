@@ -8,8 +8,8 @@
   },
   "cron": [
     {
-      "name": "Nightly Villa Sync",
-      "schedule": "0 2 * * *",
+      "name": "Villa Sync",
+      "schedule": "*/5 * * * *",
       "command": "npm run sync"
     }
   ]
