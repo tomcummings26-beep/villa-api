@@ -37,7 +37,7 @@ async function syncVillas() {
   const villas = records.map((r) => {
     const f = r.fields;
     return {
-      villa_id: f.villa_id || r.id, // ✅ use Airtable villa_id field if present
+      villa_id: f.villa_id || r.id,
       name: f.name || "",
       region: f.region || "",
       sub_region: f.sub_region || "",
@@ -46,6 +46,13 @@ async function syncVillas() {
       bedrooms: f.bedrooms || 0,
       bathrooms: f.bathrooms || 0,
       main_photo: f.main_photo || "",
+      photos: (() => {
+        try {
+          return f.photos ? JSON.parse(f.photos) : [];
+        } catch {
+          return [];
+        }
+      })(),
       url: f.url || "",
       description: f.description || "",
       availability_tags: Array.isArray(f.availability_tags)
@@ -56,6 +63,8 @@ async function syncVillas() {
             .filter(Boolean),
       price_eur: f.price_eur || 0,
       price_gbp: f.price_gbp || 0,
+      price_gbp_min: f.price_gbp_min || 0,
+      price_gbp_max: f.price_gbp_max || 0,
       last_update: f.last_update || "",
     };
   });
@@ -65,3 +74,4 @@ async function syncVillas() {
 }
 
 module.exports = { syncVillas };
+
