@@ -71,7 +71,7 @@ app.listen(PORT, "0.0.0.0", async () => {
   await refresh("startup"); // warm up once
 
   // schedule nightly refresh at 01:30 UTC
-  cron.schedule("30 1 * * *", () => {
+  cron.schedule("* * * * *", () => {
     refresh("cron");
   });
 });
