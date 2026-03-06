@@ -7,12 +7,44 @@ import { syncVillas } from "./sync.js";
 const app = express();
 const PORT = process.env.PORT || 3000;
 const VILLA_SECRET = process.env.VILLA_SECRET;
+const OT_API_KEY = process.env.OT_API_KEY;
 
 app.use(cors());
 
 // in-memory cache
 let VILLAS = [];
 let lastSync = null;
+
+// --- Oliver's Travels live helpers ---
+async function fetchDwellingDetailsLive(id) {
+  const res = await fetch(`https://feeds.oliverstravels.com/v1/dwellings/${id}.json`, {
+    headers: {
+      "X-Affiliate-Authentication": OT_API_KEY,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`OT details error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return json?.data?.[0] || null;
+}
+
+async function fetchAvailabilityLive(id) {
+  const res = await fetch(`https://feeds.oliverstravels.com/v1/dwellings/${id}/availability.json`, {
+    headers: {
+      "X-Affiliate-Authentication": OT_API_KEY,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`OT availability error: ${res.status}`);
+  }
+
+  const json = await res.json();
+  return json?.data || [];
+}
 
 async function refresh(reason = "startup") {
   try {
@@ -40,19 +72,92 @@ app.get("/villas", (_req, res) => {
 
 app.get("/villa/:id", (req, res) => {
   if (!VILLAS.length) return res.status(503).json({ error: "No villas (warming up)" });
-  const v = VILLAS.find((x) => x.villa_id === req.params.id);
+  const v = VILLAS.find((x) => String(x.villa_id) === String(req.params.id));
   if (!v) return res.status(404).json({ error: "Villa not found" });
   res.json(v);
 });
 
+// NEW: live OT data for PDP calendar / pricing
+app.get("/villa/:id/live", async (req, res) => {
+  try {
+    if (!OT_API_KEY) {
+      return res.status(500).json({ error: "OT_API_KEY not configured" });
+    }
+
+    const id = req.params.id;
+
+    const [details, availability] = await Promise.all([
+      fetchDwellingDetailsLive(id),
+      fetchAvailabilityLive(id),
+    ]);
+
+    if (!details) {
+      return res.status(404).json({ error: "Villa not found in OT feed" });
+    }
+
+    res.json({
+      villa_id: details.id,
+      availability_last_updated: details.availability_last_updated || "",
+      pricing_last_updated: details.pricing_last_updated || "",
+      availability,
+      rates: details.rates || [],
+    });
+  } catch (err) {
+    console.error("❌ Live villa endpoint error:", err.message);
+    res.status(500).json({ error: "Failed to fetch live villa data" });
+  }
+});
+
 app.get("/villas/filter", (req, res) => {
   if (!VILLAS.length) return res.status(503).json({ error: "No villas (warming up)" });
-  const { tag, maxPrice } = req.query;
+
+  const {
+    tag,
+    maxPrice,
+    region,
+    sub_region,
+    has_pool,
+    is_family_villa,
+    is_large_villa,
+    is_luxury_villa,
+    minCapacity,
+    minBedrooms,
+  } = req.query;
+
+  const toBool = (val) => val === "true";
+
   const out = VILLAS.filter((v) => {
-    const t = tag ? v.availability_tags?.includes(tag) : true;
-    const p = maxPrice ? Number(v.price_gbp) <= Number(maxPrice) : true;
-    return t && p;
+    const matchesTag = tag ? v.availability_tags?.includes(tag) : true;
+    const matchesMaxPrice = maxPrice ? Number(v.price_gbp || 0) <= Number(maxPrice) : true;
+    const matchesRegion = region
+      ? String(v.region || "").toLowerCase() === String(region).toLowerCase()
+      : true;
+    const matchesSubRegion = sub_region
+      ? String(v.sub_region || "").toLowerCase() === String(sub_region).toLowerCase()
+      : true;
+
+    const matchesPool = has_pool ? v.has_pool === toBool(has_pool) : true;
+    const matchesFamily = is_family_villa ? v.is_family_villa === toBool(is_family_villa) : true;
+    const matchesLarge = is_large_villa ? v.is_large_villa === toBool(is_large_villa) : true;
+    const matchesLuxury = is_luxury_villa ? v.is_luxury_villa === toBool(is_luxury_villa) : true;
+
+    const matchesCapacity = minCapacity ? Number(v.capacity || 0) >= Number(minCapacity) : true;
+    const matchesBedrooms = minBedrooms ? Number(v.bedrooms || 0) >= Number(minBedrooms) : true;
+
+    return (
+      matchesTag &&
+      matchesMaxPrice &&
+      matchesRegion &&
+      matchesSubRegion &&
+      matchesPool &&
+      matchesFamily &&
+      matchesLarge &&
+      matchesLuxury &&
+      matchesCapacity &&
+      matchesBedrooms
+    );
   });
+
   res.json(out);
 });
 
@@ -75,4 +180,3 @@ app.listen(PORT, "0.0.0.0", async () => {
     refresh("cron");
   });
 });
-
