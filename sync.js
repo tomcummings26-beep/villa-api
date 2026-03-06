@@ -1,7 +1,12 @@
 require("dotenv").config();
 const fetch = require("node-fetch");
 
-const { AIRTABLE_BASE_ID, AIRTABLE_API_KEY, AIRTABLE_TABLE, AIRTABLE_VIEW } = process.env;
+const {
+  AIRTABLE_BASE_ID,
+  AIRTABLE_API_KEY,
+  AIRTABLE_TABLE,
+  AIRTABLE_VIEW
+} = process.env;
 
 async function fetchAllRecords() {
   let allRecords = [];
@@ -9,7 +14,7 @@ async function fetchAllRecords() {
 
   do {
     const url = new URL(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE}`);
-    url.searchParams.set("pageSize", "100"); // Airtable max per request
+    url.searchParams.set("pageSize", "100");
     url.searchParams.set("view", AIRTABLE_VIEW);
     if (offset) url.searchParams.set("offset", offset);
 
@@ -29,6 +34,29 @@ async function fetchAllRecords() {
   return allRecords;
 }
 
+function parsePhotos(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return [];
+  }
+}
+
+function parseAvailabilityTags(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  return String(value)
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+function parseCheckbox(value) {
+  return value === true;
+}
+
 async function syncVillas() {
   console.log("🚀 Starting villa sync...");
 
@@ -36,6 +64,7 @@ async function syncVillas() {
 
   const villas = records.map((r) => {
     const f = r.fields;
+
     return {
       villa_id: f.villa_id || r.id,
       name: f.name || "",
@@ -46,25 +75,22 @@ async function syncVillas() {
       bedrooms: f.bedrooms || 0,
       bathrooms: f.bathrooms || 0,
       main_photo: f.main_photo || "",
-      photos: (() => {
-        try {
-          return f.photos ? JSON.parse(f.photos) : [];
-        } catch {
-          return [];
-        }
-      })(),
+      photos: parsePhotos(f.photos),
       url: f.url || "",
       description: f.description || "",
-      availability_tags: Array.isArray(f.availability_tags)
-        ? f.availability_tags
-        : (f.availability_tags || "")
-            .split(",")
-            .map((t) => t.trim())
-            .filter(Boolean),
+
+      availability_tags: parseAvailabilityTags(f.availability_tags),
+
       price_eur: f.price_eur || 0,
       price_gbp: f.price_gbp || 0,
       price_gbp_min: f.price_gbp_min || 0,
       price_gbp_max: f.price_gbp_max || 0,
+
+      has_pool: parseCheckbox(f.has_pool),
+      is_family_villa: parseCheckbox(f.is_family_villa),
+      is_large_villa: parseCheckbox(f.is_large_villa),
+      is_luxury_villa: parseCheckbox(f.is_luxury_villa),
+
       last_update: f.last_update || "",
     };
   });
@@ -74,4 +100,3 @@ async function syncVillas() {
 }
 
 module.exports = { syncVillas };
-
