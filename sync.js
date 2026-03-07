@@ -1,11 +1,11 @@
-require("dotenv").config();
-const fetch = require("node-fetch");
+import "dotenv/config";
+import fetch from "node-fetch";
 
 const {
   AIRTABLE_BASE_ID,
   AIRTABLE_API_KEY,
   AIRTABLE_TABLE,
-  AIRTABLE_VIEW
+  AIRTABLE_VIEW,
 } = process.env;
 
 async function fetchAllRecords() {
@@ -37,6 +37,7 @@ async function fetchAllRecords() {
 function parsePhotos(value) {
   if (!value) return [];
   if (Array.isArray(value)) return value;
+
   try {
     return JSON.parse(value);
   } catch {
@@ -47,23 +48,49 @@ function parsePhotos(value) {
 function parseAvailabilityTags(value) {
   if (!value) return [];
   if (Array.isArray(value)) return value;
+
   return String(value)
     .split(",")
     .map((t) => t.trim())
     .filter(Boolean);
 }
 
+function parseAmenities(value) {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return [...new Set(value.map((a) => String(a).trim()).filter(Boolean))];
+  }
+
+  return [
+    ...new Set(
+      String(value)
+        .split(",")
+        .map((a) => a.trim())
+        .filter(Boolean)
+    ),
+  ];
+}
+
 function parseCheckbox(value) {
   return value === true;
 }
 
-async function syncVillas() {
+function parseNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+export async function syncVillas() {
   console.log("🚀 Starting villa sync...");
 
   const records = await fetchAllRecords();
 
   const villas = records.map((r) => {
     const f = r.fields;
+
+    const amenitiesList = parseAmenities(f.amenities);
 
     return {
       villa_id: f.villa_id || r.id,
@@ -91,6 +118,12 @@ async function syncVillas() {
       is_large_villa: parseCheckbox(f.is_large_villa),
       is_luxury_villa: parseCheckbox(f.is_luxury_villa),
 
+      latitude: parseNumber(f.latitude),
+      longitude: parseNumber(f.longitude),
+
+      amenities: amenitiesList.join(", "),
+      amenities_list: amenitiesList,
+
       last_update: f.last_update || "",
     };
   });
@@ -98,5 +131,3 @@ async function syncVillas() {
   console.log(`✅ Synced ${villas.length} villas`);
   return villas;
 }
-
-module.exports = { syncVillas };
