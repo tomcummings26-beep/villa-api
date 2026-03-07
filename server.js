@@ -1,7 +1,7 @@
-// server.js
 import express from "express";
 import cors from "cors";
 import cron from "node-cron";
+import fetch from "node-fetch";
 import { syncVillas } from "./sync.js";
 
 const app = express();
@@ -72,12 +72,14 @@ app.get("/villas", (_req, res) => {
 
 app.get("/villa/:id", (req, res) => {
   if (!VILLAS.length) return res.status(503).json({ error: "No villas (warming up)" });
+
   const v = VILLAS.find((x) => String(x.villa_id) === String(req.params.id));
   if (!v) return res.status(404).json({ error: "Villa not found" });
+
   res.json(v);
 });
 
-// NEW: live OT data for PDP calendar / pricing
+// live OT data for PDP calendar / pricing
 app.get("/villa/:id/live", async (req, res) => {
   try {
     if (!OT_API_KEY) {
@@ -122,6 +124,7 @@ app.get("/villas/filter", (req, res) => {
     is_luxury_villa,
     minCapacity,
     minBedrooms,
+    amenity,
   } = req.query;
 
   const toBool = (val) => val === "true";
@@ -144,6 +147,12 @@ app.get("/villas/filter", (req, res) => {
     const matchesCapacity = minCapacity ? Number(v.capacity || 0) >= Number(minCapacity) : true;
     const matchesBedrooms = minBedrooms ? Number(v.bedrooms || 0) >= Number(minBedrooms) : true;
 
+    const matchesAmenity = amenity
+      ? v.amenities_list?.some(
+          (a) => a.toLowerCase() === String(amenity).trim().toLowerCase()
+        )
+      : true;
+
     return (
       matchesTag &&
       matchesMaxPrice &&
@@ -154,7 +163,8 @@ app.get("/villas/filter", (req, res) => {
       matchesLarge &&
       matchesLuxury &&
       matchesCapacity &&
-      matchesBedrooms
+      matchesBedrooms &&
+      matchesAmenity
     );
   });
 
@@ -166,6 +176,7 @@ app.post("/admin/sync", async (req, res) => {
   const auth = req.headers["authorization"] || "";
   if (!VILLA_SECRET) return res.status(403).json({ error: "No VILLA_SECRET set" });
   if (auth !== `Bearer ${VILLA_SECRET}`) return res.status(401).json({ error: "Unauthorized" });
+
   await refresh("manual");
   res.json({ ok: true, lastSync, count: VILLAS.length });
 });
@@ -173,10 +184,10 @@ app.post("/admin/sync", async (req, res) => {
 // start server
 app.listen(PORT, "0.0.0.0", async () => {
   console.log(`✅ Villa API running on port ${PORT}`);
-  await refresh("startup"); // warm up once
+  await refresh("startup");
 
   // schedule nightly refresh at 01:30 UTC
-  cron.schedule("30 1 * * *", () => {
+  cron.schedule("11 12 * * *", () => {
     refresh("cron");
   });
 });
