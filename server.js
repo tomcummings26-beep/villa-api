@@ -279,7 +279,7 @@ app.listen(PORT, "0.0.0.0", async () => {
   await refresh("startup");
 
   // nightly refresh
-  cron.schedule("14 19 * * *", () => {
+  cron.schedule("33 19 * * *", () => {
     refresh("cron");
   });
 });
